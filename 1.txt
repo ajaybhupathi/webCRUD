@@ -1,0 +1,157 @@
+@page "/persons"
+@using BlazorCrud.Services
+@inject IPersonService personService
+@rendermode InteractiveServer
+@inject IJSRuntime jsRuntime
+
+<h3>Dashboard</h3>
+
+<div class="row">
+    <div class="col-md-6">
+        <input type="text" @bind-value="searchTerm" @bind-value:event="oninput" class="form-control" placeholder="Search by name or email">
+        <a href="/person/add" class="btn btn-outline-dark my-2">Add more</a>
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>
+                        <button class="btn btn-link" @onclick="() => SortBy(nameof(Models.Person.Name))">Name @SortIndicator(nameof(Models.Person.Name))</button>
+                    </th>
+                    <th>
+                        <button class="btn btn-link" @onclick="() => SortBy(nameof(Models.Person.Email))">Email @SortIndicator(nameof(Models.Person.Email))</button>
+                    </th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var person in GetPagedPersons())
+                {
+                    <tr>
+                        <td>@person.Name</td>
+                        <td>@person.Email</td>
+                        <td>
+                            <a href="/person/edit/@person.Id" class="btn btn-success">Edit</a>
+                            <a class="btn btn-danger" @onclick="async () => await Delete(person)">Delete</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        @if (filteredPersons.Count == 0)
+        {
+            <p>No matching records found.</p>
+        }
+
+        <div class="mt-3">
+            <button class="btn btn-outline-primary" disabled="@IsFirstPage" @onclick="() => NavigateToPage(currentPage - 1)">Previous</button>
+            Page @currentPage
+            <button class="btn btn-outline-primary" disabled="@IsLastPage" @onclick="() => NavigateToPage(currentPage + 1)">Next</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<Models.Person> persons = new List<Models.Person>();
+    private List<Models.Person> filteredPersons = new List<Models.Person>();
+    private string searchTerm = "";
+    private string sortBy = nameof(Models.Person.Name);
+    private bool sortAscending = true;
+    private const int PageSize = 5;
+    private int currentPage = 1;
+
+    protected override void OnInitialized()
+    {
+        persons = personService.GetAll();
+        RefreshFilteredPersons();
+    }
+
+    private List<Models.Person> GetFilteredPersons()
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            return persons;
+        }
+        else
+        {
+            string lowerCaseSearch = searchTerm.ToLower();
+            return persons.Where(p =>
+                p.Name.ToLower().Contains(lowerCaseSearch) ||
+                p.Email.ToLower().Contains(lowerCaseSearch)
+            ).ToList();
+        }
+    }
+
+    private List<Models.Person> GetSortedPersons()
+    {
+        var sortedPersons = filteredPersons;
+
+        switch (sortBy)
+        {
+            case nameof(Models.Person.Name):
+                sortedPersons = sortAscending ? sortedPersons.OrderBy(p => p.Name).ToList() : sortedPersons.OrderByDescending(p => p.Name).ToList();
+                break;
+            case nameof(Models.Person.Email):
+                sortedPersons = sortAscending ? sortedPersons.OrderBy(p => p.Email).ToList() : sortedPersons.OrderByDescending(p => p.Email).ToList();
+                break;
+                
+        }
+
+        return sortedPersons;
+    }
+
+    private List<Models.Person> GetPagedPersons()
+    {
+        var sortedPersons = GetSortedPersons();
+        int skip = (currentPage - 1) * PageSize;
+        return sortedPersons.Skip(skip).Take(PageSize).ToList();
+    }
+
+    private void RefreshFilteredPersons()
+    {
+        filteredPersons = GetFilteredPersons();
+        currentPage = 1; 
+    }
+
+    private void SortBy(string propertyName)
+    {
+        if (sortBy == propertyName)
+        {
+            sortAscending = !sortAscending;
+        }
+        else
+        {
+            sortBy = propertyName;
+            sortAscending = true;
+        }
+    }
+
+    private string SortIndicator(string propertyName)
+    {
+        if (sortBy == propertyName)
+        {
+            return sortAscending ? "▲" : "▼";
+        }
+        return "";
+    }
+
+    private void NavigateToPage(int page)
+    {
+        currentPage = page;
+    }
+
+    private bool IsFirstPage => currentPage == 1;
+    private bool IsLastPage => currentPage * PageSize >= GetSortedPersons().Count;
+
+    private async Task Delete(Models.Person person)
+    {
+        bool confirmed = await jsRuntime.InvokeAsync<bool>("confirm", "Are you sure?");
+        if (confirmed)
+        {
+            if (personService.Delete(person.Id))
+            {
+                persons.Remove(person);
+                RefreshFilteredPersons();
+            }
+        }
+    }
+}
